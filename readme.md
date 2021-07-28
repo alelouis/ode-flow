@@ -4,10 +4,10 @@ Ordinary Differential Equation flow visualization written in Rust with SDL2.
 
 
 ## Ordinary Differential Equation
-The ODE used is defined at the top of the `main.rs` file.
+The ODE used is defined at the top of the `ode.rs` file.
 ```rust
-// ode func
-pub fn f(x: f64, y: f64) -> (f64, f64) {
+// pendulum with friction
+pub fn pendulum(x: f64, y: f64) -> (f64, f64) {
     (y, -x.sin() - 0.5 * y)
 }
 ```
