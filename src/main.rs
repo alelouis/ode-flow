@@ -130,7 +130,6 @@ pub fn main() {
                 let dy_i = linear_map(xy.1 + dy * 0.25, extent_y, (0., t_height as f64)) as i32;
 
                 // draw gradient line
-
                 let color = grad(norm);
                 texture_canvas.set_draw_color(Color::RGBA(color.int_r(), color.int_g(), color.int_b(), 255));
                 let points = [Point::new(x_i , y_i), Point::new(dx_i, dy_i)];
