@@ -1,5 +1,3 @@
-extern crate sdl2; 
-
 use sdl2::render::BlendMode;
 use sdl2::rect::Rect;
 use sdl2::rect::Point;
@@ -7,30 +5,19 @@ use sdl2::event::Event;
 use sdl2::pixels::Color;
 use std::time::Duration;
 use sdl2::pixels::PixelFormatEnum;
-use rand::Rng;
 use scarlet::colorpoint::ColorPoint;
 use scarlet::color::RGBColor;
 
-// ode func
-pub fn f(x: f64, y: f64) -> (f64, f64) {
-    (y, -x.sin() - 0.5 * y)
-}
-
-// linear segment mapping
-pub fn linear_map(value: f64, src_extent : (f64, f64), dst_extent : (f64, f64)) -> f64 {
-    (((value - src_extent.0) / (src_extent.1 - src_extent.0))*(dst_extent.1 - dst_extent.0)) + dst_extent.0
-}
+mod ode;
+mod math;
 
 // main loop
 pub fn main() {
-    let mut rng = rand::thread_rng();
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    
     let width = 800;
     let height = 400;
     let upsampling = 2;
-
     let t_width = width*upsampling;
     let t_height = height*upsampling;
 
@@ -58,12 +45,12 @@ pub fn main() {
     texture.set_blend_mode(BlendMode::Blend);
     texture_line.set_blend_mode(BlendMode::Blend);
 
-    // Colormap
+    // colormap
     let start = RGBColor::from_hex_code("#00CCFF").unwrap();
     let end = RGBColor::from_hex_code("#222FDA").unwrap();
     let grad = start.gradient(&end);
 
-    // Streaming texture
+    // streaming texture
     texture.with_lock(None, |buffer: &mut [u8], pitch: usize| {
         for y in 0..height as usize {
             for x in 0..width as usize {
@@ -78,8 +65,6 @@ pub fn main() {
     
 
     // init parameters
-    
-    let mut i = 0;
     let norm_atten = 0.1;
     let extent_x = (-10.0, 10.0);
     let extent_y = (-5.0, 5.0);
@@ -88,9 +73,7 @@ pub fn main() {
     // loop
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
-        i = i + 1;
-        
-        // Event loop
+        // event loop
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => {
@@ -99,13 +82,11 @@ pub fn main() {
                 _ => {}
             }
         }
-
+        // generate batches
         for _ in 0..256 {
-            let x = linear_map(rng.gen_range(0..t_width) as f64, (0., t_width as f64), extent_x);
-            let y = linear_map(rng.gen_range(0..t_height) as f64, (0., t_height as f64), extent_y);
-            xy_vec.push((x, y));
+            xy_vec.push(math::generate_random_tuple(extent_x, extent_y, t_width, t_width));
         }
-
+        // keep fixed len
         while xy_vec.len() > usize::pow(2, 12) {
             xy_vec.drain(0..16);
         }
@@ -114,30 +95,31 @@ pub fn main() {
         canvas.with_texture_canvas(&mut texture_line, |texture_canvas| {
             texture_canvas.set_draw_color(Color::RGBA(0, 0, 0, 128));
             texture_canvas.clear();
+
+            // process ode paths
             for xy in xy_vec.iter_mut() {
                 // pixel positions
-                let x_i = linear_map(xy.0, extent_x, (0., t_width as f64)) as i32;
-                let y_i = linear_map(xy.1, extent_y, (0., t_height as f64)) as i32;
+                let xy_p = math::state_to_pixels(*xy, extent_x, extent_y, t_width, t_height);
 
-                // gradient
-                let (dx, dy) = f(xy.0, xy.1);
+                // state gradient
+                let dxy = ode::pendulum(xy.0, xy.1);
+                let gxy = (xy.0 + dxy.0 * 0.25, xy.1 + dxy.1 * 0.25);
 
                 // norm
-                let norm = (dx*dx + dy*dy) / 10.0;
+                let norm = math::norm(dxy) / 10.0;
 
-                // pixel gradient end positions
-                let dx_i = linear_map(xy.0 + dx * 0.25, extent_x, (0., t_width as f64)) as i32;
-                let dy_i = linear_map(xy.1 + dy * 0.25, extent_y, (0., t_height as f64)) as i32;
+                // pixel gradient
+                let gxy_p = math::state_to_pixels(gxy, extent_x, extent_y, t_width, t_height);
 
                 // draw gradient line
                 let color = grad(norm);
+                let points = [Point::new(xy_p.0 , xy_p.1), Point::new(gxy_p.0, gxy_p.1)];
                 texture_canvas.set_draw_color(Color::RGBA(color.int_r(), color.int_g(), color.int_b(), 255));
-                let points = [Point::new(x_i , y_i), Point::new(dx_i, dy_i)];
                 texture_canvas.draw_lines(&points[..]).unwrap();
 
                 // update particles
-                xy.0 = xy.0 + dx * norm_atten;
-                xy.1 = xy.1 + dy * norm_atten;
+                xy.0 = xy.0 + dxy.0 * norm_atten;
+                xy.1 = xy.1 + dxy.1 * norm_atten;
             }
         }).unwrap();
     
